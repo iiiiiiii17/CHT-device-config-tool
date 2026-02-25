@@ -9,11 +9,11 @@ import sys
 import urllib.request
 import subprocess
 from tkinter import ttk
-
+import shutil  
 
 APP_NAME = "設備設定工具"
 APP_VERSION = "1.0.0"
-
+VERSION_URL = "https://raw.githubusercontent.com/iiiiiiii17/CHT-device-config-tool/refs/heads/main/version.txt"
 
 # 判斷程式是否被打包成 exe
 if getattr(sys, 'frozen', False):
@@ -355,30 +355,60 @@ def version_tuple(v):
     return tuple(map(int, v.split(".")))
 
 def check_for_update():
-    version_url = "https://yourserver.com/version.txt"
-
+    # 建議將 URL 放在全域變數方便管理
     try:
-        with urllib.request.urlopen(version_url, timeout=5) as response:
-            lines = response.read().decode("utf-8").strip().splitlines()
+        # 使用你定義的 VERSION_URL
+        with urllib.request.urlopen(VERSION_URL, timeout=5) as response:
+            content = response.read().decode("utf-8").strip().splitlines()
+            if len(content) < 2:
+                return
 
-        latest_version = lines[0].strip()
-        download_url = lines[1].strip()
+            latest_version = content[0].strip()
+            download_url = content[1].strip()
 
-        if version_tuple(latest_version) > version_tuple(APP_VERSION):
+            if version_tuple(latest_version) > version_tuple(APP_VERSION):
+                result = messagebox.askyesno(
+                    "發現新版本",
+                    f"目前版本：{APP_VERSION}\n"
+                    f"最新版本：{latest_version}\n\n"
+                    "是否立即下載並覆蓋更新？"
+                )
 
-            result = messagebox.askyesno(
-                "發現新版本",
-                f"目前版本：{APP_VERSION}\n"
-                f"最新版本：{latest_version}\n\n"
-                "是否立即更新？"
-            )
+                if result:
+                    auto_update(download_url)
+    except Exception as e:
+        print(f"檢查更新失敗: {e}") # 僅用於調試
 
-            if result:
-                auto_update(download_url)
+def auto_update(download_url):
+    """執行自動更新流程"""
+    try:
+        # 1. 取得目前執行檔的路徑
+        current_exe = Path(sys.executable)
+        temp_exe = current_exe.with_suffix(".tmp")
+        
+        # 2. 下載新版本 (使用 urllib)
+        messagebox.showinfo("下載中", "正在下載更新檔，請稍後...")
+        with urllib.request.urlopen(download_url) as response, open(temp_exe, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
 
-    except Exception:
-        # 靜默失敗（沒網路不干擾使用者）
-        pass
+        # 3. 準備「自我替換」的命令
+        # 邏輯：等待 2 秒(確保主程式關閉) -> 刪除舊 exe -> 改名新 exe -> 啟動新 exe
+        cmd = (
+            f'timeout /t 2 /nobreak && '
+            f'del "{current_exe}" && '
+            f'move "{temp_exe}" "{current_exe}" && '
+            f'start "" "{current_exe}"'
+        )
+
+        # 4. 啟動 cmd 執行上述指令，不顯示視窗
+        subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # 5. 立即關閉目前的程式
+        root.destroy()
+        sys.exit()
+
+    except Exception as e:
+        messagebox.showerror("更新失敗", f"更新過程中發生錯誤：{str(e)}")
 
 # ------------------ 按鈕 ------------------ #
 choose_file_button = tk.Button(
