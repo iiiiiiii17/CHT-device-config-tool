@@ -10,9 +10,10 @@ import urllib.request
 import subprocess
 from tkinter import ttk
 import shutil  
+import time
 
 APP_NAME = "設備設定工具"
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.9.9"
 VERSION_URL = "https://raw.githubusercontent.com/iiiiiiii17/CHT-device-config-tool/refs/heads/main/version.txt"
 
 # 判斷程式是否被打包成 exe
@@ -352,63 +353,56 @@ def choose_file():
 
 
 def version_tuple(v):
-    return tuple(map(int, v.split(".")))
+    try:
+        # 只保留數字與點，過濾掉其餘字元
+        clean_v = "".join(c for c in v if c.isdigit() or c == '.')
+        return tuple(map(int, clean_v.split(".")))
+    except Exception as e:
+        print(f"版本號解析錯誤 ({v}): {e}")
+        return (0, 0, 0)
 
 def check_for_update():
-    # 建議將 URL 放在全域變數方便管理
+    # 加上隨機參數避免 GitHub 快取
+    target_url = f"{VERSION_URL}?t={int(time.time())}"
+    print(f"[*] 正在檢查更新... URL: {target_url}")
+    
     try:
-        # 使用你定義的 VERSION_URL
-        with urllib.request.urlopen(VERSION_URL, timeout=5) as response:
-            content = response.read().decode("utf-8").strip().splitlines()
-            if len(content) < 2:
-                return
+        with urllib.request.urlopen(target_url, timeout=5) as response:
+            # 讀取並解碼
+            raw_data = response.read().decode("utf-8")
+            # 關鍵修正：使用 splitlines 並過濾掉純空白的行
+            lines = [line.strip() for line in raw_data.splitlines() if line.strip()]
+            
+        print(f"[*] 抓取到的行數: {len(lines)}")
+        for i, content in enumerate(lines):
+            print(f"    行 {i}: {content}")
 
-            latest_version = content[0].strip()
-            download_url = content[1].strip()
+        if len(lines) < 2:
+            print("[!] 錯誤：雲端檔案格式不正確，行數不足 2 行。")
+            return
 
-            if version_tuple(latest_version) > version_tuple(APP_VERSION):
-                result = messagebox.askyesno(
-                    "發現新版本",
-                    f"目前版本：{APP_VERSION}\n"
-                    f"最新版本：{latest_version}\n\n"
-                    "是否立即下載並覆蓋更新？"
-                )
-
-                if result:
-                    auto_update(download_url)
-    except Exception as e:
-        print(f"檢查更新失敗: {e}") # 僅用於調試
-
-def auto_update(download_url):
-    """執行自動更新流程"""
-    try:
-        # 1. 取得目前執行檔的路徑
-        current_exe = Path(sys.executable)
-        temp_exe = current_exe.with_suffix(".tmp")
+        latest_version = lines[0]
+        download_url = lines[1]
         
-        # 2. 下載新版本 (使用 urllib)
-        messagebox.showinfo("下載中", "正在下載更新檔，請稍後...")
-        with urllib.request.urlopen(download_url) as response, open(temp_exe, 'wb') as out_file:
-            shutil.copyfileobj(response, out_file)
+        print(f"[*] 雲端最新版本: {latest_version}")
+        print(f"[*] 程式目前版本: {APP_VERSION}")
 
-        # 3. 準備「自我替換」的命令
-        # 邏輯：等待 2 秒(確保主程式關閉) -> 刪除舊 exe -> 改名新 exe -> 啟動新 exe
-        cmd = (
-            f'timeout /t 2 /nobreak && '
-            f'del "{current_exe}" && '
-            f'move "{temp_exe}" "{current_exe}" && '
-            f'start "" "{current_exe}"'
-        )
-
-        # 4. 啟動 cmd 執行上述指令，不顯示視窗
-        subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        # 5. 立即關閉目前的程式
-        root.destroy()
-        sys.exit()
+        # 比較版本 (確保使用你定義的 version_tuple)
+        if version_tuple(latest_version) > version_tuple(APP_VERSION):
+            print("[+] 偵測到新版本！")
+            result = messagebox.askyesno(
+                "發現新版本",
+                f"目前版本：{APP_VERSION}\n"
+                f"最新版本：{latest_version}\n\n"
+                "是否立即下載更新並自動重啟？"
+            )
+            if result:
+                auto_update(download_url)
+        else:
+            print("[-] 目前已是最新版本。")
 
     except Exception as e:
-        messagebox.showerror("更新失敗", f"更新過程中發生錯誤：{str(e)}")
+        print(f"[!] 檢查更新失敗: {e}")
 
 # ------------------ 按鈕 ------------------ #
 choose_file_button = tk.Button(
