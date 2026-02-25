@@ -1,0 +1,60 @@
+config
+hostname TPS11Z-231
+exit
+config
+vlan vid 4092
+fix T1
+exit
+ip inband address 172.29.195.113/24
+ip inband mgmt-vlan 4092 pbit 7
+ip default-gateway 1 
+exit
+
+config
+xpon ont-fw-upgrade model PMG4506-T20B active on
+xpon ont-fw-upgrade model PMG4506-T20B fw-id P4506R240930
+
+xpon ont-fw-upgrade model 500NP active on
+xpon ont-fw-upgrade model 500NP fw-id 5XXNPR250723
+
+xpon ont-fw-upgrade model 512NP active on
+xpon ont-fw-upgrade model 512NP fw-id 5XXNPR250723
+
+xpon ont-fw-upgrade model RTF8207W active on
+xpon ont-fw-upgrade model RTF8207W fw-id R82XXR240311
+
+xpon ont-fw-upgrade model RTF8217 active on
+xpon ont-fw-upgrade model RTF8217 fw-id R82XXR231123
+
+xpon ont-fw-upgrade model RTF8207W-E active on
+xpon ont-fw-upgrade model RTF8207W-E fw-id R82XXR231123
+
+xpon ont-fw-upgrade model RTF8217-E active on
+xpon ont-fw-upgrade model RTF8217-E fw-id R82XXR231123
+
+xpon ont-fw-upgrade model H660WM-C active on
+xpon ont-fw-upgrade model H660WM-C fw-id H660X231127
+
+xpon ont-fw-upgrade model H660-C active on
+xpon ont-fw-upgrade model H660-C fw-id H660X231127
+
+xpon ont-fw-upgrade model PG004 active on
+xpon ont-fw-upgrade model PG004 fw-id PG004R250808
+exit
+
+config
+no xpon ont-fw-upgrade fwimg
+xpon ont-fw-upgrade fwimg 1 fw-id P4506R240930 tftp 172.19.17.251 file P4506R240930.fmw
+xpon ont-fw-upgrade fwimg 2 fw-id 5XXNPR250723 tftp 172.19.17.251 file 5XXNPR250723.fmw
+xpon ont-fw-upgrade fwimg 3 fw-id R82XXR231123 tftp 172.19.17.251 file R82XXR231123.fmw
+xpon ont-fw-upgrade fwimg 4 fw-id R82XXR240311 tftp 172.19.17.251 file R82XXR240311
+xpon ont-fw-upgrade fwimg 5 fw-id H660X231127 tftp 172.19.17.251 file H660X231127
+xpon ont-fw-upgrade fwimg 6 fw-id PG004R250808 tftp 172.19.17.251 file PG004R250808.fmw
+exit
+
+config
+time server
+time server sync
+exit
+
+write memory
