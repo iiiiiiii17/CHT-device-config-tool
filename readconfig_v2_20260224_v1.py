@@ -108,7 +108,8 @@ def get_hostname():
     except Exception: pass
 
 def get_management_ip():
-    target_prefixes = ["ip address default-management", "ip address inband-default"]
+    # 增加新的支援格式
+    target_prefixes = ["ip address default-management", "ip address inband-default", "ip inband address"]
     try:
         with file_path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -117,15 +118,27 @@ def get_management_ip():
                     if clean_line.startswith(prefix):
                         parts = line.strip().split()
                         prefix_len = len(prefix.split())
-                        if len(parts) >= prefix_len + 2:
-                            mgmt_ip_var.set(parts[prefix_len])
-                            mask_var.set(parts[prefix_len + 1])
+                        
+                        # 範例格式：ip inband address 172.29.195.113/25 gateway 172.29.195.126
+                        if len(parts) >= prefix_len + 1:
+                            raw_ip_data = parts[prefix_len] # 可能是 "172.29.195.113/25" 或 "172.29.195.113"
+                            
+                            if '/' in raw_ip_data:
+                                # 拆分 IP 與 遮罩 (172.29.195.113 與 /25)
+                                ip_only, cidr = raw_ip_data.split('/', 1)
+                                mgmt_ip_var.set(ip_only)
+                                mask_var.set(f"/{cidr}")
+                            else:
+                                # 傳統空白分隔格式 (172.29.195.113 255.255.255.128)
+                                mgmt_ip_var.set(raw_ip_data)
+                                if len(parts) >= prefix_len + 2:
+                                    mask_var.set(parts[prefix_len + 1])
                             return
     except Exception: pass
 
 def modify_all():
     new_ip = mgmt_ip_var.get().strip()
-    new_mask = mask_var.get().strip()
+    new_mask = mask_var.get().strip() # 可能是 "/25" 或 "255.255.255.0"
     prefix = hostname_prefix_var.get().strip()
     suffix = hostname_suffix_var.get().strip()
     new_hostname = f"{prefix}-{suffix}" if (prefix or suffix) else ""
@@ -134,30 +147,49 @@ def modify_all():
         messagebox.showwarning("警告", "請輸入要修改的內容")
         return
 
-    target_prefixes = ["ip address default-management", "ip address inband-default"]
+    target_prefixes = ["ip address default-management", "ip address inband-default", "ip inband address"]
     try:
         lines = []
         with file_path.open("r", encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 lower_line = stripped.lower()
+                indent = line[:len(line) - len(line.lstrip())]
+                
                 # 修改 hostname
                 if lower_line.startswith("hostname") and new_hostname:
-                    indent = line[:len(line) - len(line.lstrip())]
                     lines.append(f"{indent}hostname {new_hostname}\n")
                     continue
+
                 # 修改 IP
                 modified_ip = False
                 for p_text in target_prefixes:
                     if lower_line.startswith(p_text) and new_ip:
                         parts = stripped.split()
                         p_len = len(p_text.split())
-                        old_mask = parts[p_len + 1] if len(parts) > p_len + 1 else ""
-                        mask = new_mask if new_mask else old_mask
-                        indent = line[:len(line) - len(line.lstrip())]
-                        lines.append(f"{indent}{p_text} {new_ip} {mask}\n")
+                        
+                        # 如果是 ip inband address 這種需要斜線組合的格式
+                        if p_text == "ip inband address":
+                            # 嘗試抓取原有的 gateway
+                            gateway_str = ""
+                            if "gateway" in parts:
+                                gw_idx = parts.index("gateway")
+                                if len(parts) > gw_idx + 1:
+                                    gateway_str = f" gateway {parts[gw_idx+1]}"
+                            
+                            # 處理遮罩：確保有斜線
+                            mask_val = new_mask if new_mask.startswith('/') else f"/{new_mask}"
+                            lines.append(f"{indent}{p_text} {new_ip}{mask_val}{gateway_str}\n")
+                        
+                        # 傳統格式 (空白分隔)
+                        else:
+                            old_mask = parts[p_len + 1] if len(parts) > p_len + 1 else "255.255.255.0"
+                            mask = new_mask.replace("/", "") if "/" in new_mask else (new_mask if new_mask else old_mask)
+                            lines.append(f"{indent}{p_text} {new_ip} {mask}\n")
+                        
                         modified_ip = True
                         break
+                
                 if not modified_ip:
                     lines.append(line)
 

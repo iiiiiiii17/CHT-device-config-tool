@@ -5,7 +5,7 @@ vlan 4092
 name mgmt
 fixed 1-16
 no ip address default-gateway
-ip address default-management 1.1.1.2 255.255.255.120
+ip address default-management 172.11.192.188 255.255.255.120
 ip address default-gateway 172.29.176.126
 exit
 logins username pcpcdtmc password pcpcdtmc
