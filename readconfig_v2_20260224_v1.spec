@@ -5,7 +5,7 @@ a = Analysis(
     ['readconfig_v2_20260224_v1.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('cht_logo.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['cht_logo.ico'],
 )

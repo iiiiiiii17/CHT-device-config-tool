@@ -5,7 +5,7 @@ config
 vlan vid 4092
 fix T1
 exit
-ip inband address 172.29.195.113/24
+ip inband address 172.29.195.113/25 gateway 172.29.195.126
 ip inband mgmt-vlan 4092 pbit 7
 ip default-gateway 1 
 exit

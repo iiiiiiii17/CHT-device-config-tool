@@ -1,2 +1,2 @@
 1.0.0
-https://github.com/iiiiiiii17/CHT-device-config-tool/releases/download/C0/readconfig_v2_20260224_v1.exe
+https://github.com/iiiiiiii17/CHT-device-config-tool/releases/download/C0/CHT_Config_Tool.exe

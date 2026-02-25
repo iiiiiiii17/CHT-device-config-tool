@@ -1,52 +1,54 @@
 import sys
 from pathlib import Path
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
-from tkinter import filedialog
-
-import os
-import sys
+from tkinter import scrolledtext, messagebox, filedialog, ttk
 import urllib.request
 import subprocess
-from tkinter import ttk
-import shutil  
+import shutil
 import time
+import threading  # 引入執行緒模組
 
 APP_NAME = "設備設定工具"
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.9.0"
 VERSION_URL = "https://raw.githubusercontent.com/iiiiiiii17/CHT-device-config-tool/refs/heads/main/version.txt"
 
-# 判斷程式是否被打包成 exe
+# --- 統一路徑處理 ---
 if getattr(sys, 'frozen', False):
-    base_path = Path(sys._MEIPASS)
+    BASE_PATH = Path(sys._MEIPASS)
+    EXE_DIR = Path(sys.executable).parent
 else:
-    base_path = Path(__file__).parent
+    BASE_PATH = Path(__file__).parent
+    EXE_DIR = Path(__file__).parent
 
-file_path = base_path / "null"
+file_path = BASE_PATH / "null"
 
 # ------------------ GUI ------------------ #
 root = tk.Tk()
 root.title(f"{APP_NAME} v{APP_VERSION}")
-root.geometry("850x500")
+root.geometry("850x550") # 稍微加高一點放按鈕
 
-# 選擇檔案按鈕獨立第一排
+# 設定視窗圖示
+try:
+    icon_path = BASE_PATH / "cht_logo.ico"
+    if icon_path.exists():
+        root.iconbitmap(str(icon_path))
+except Exception as e:
+    print(f"無法載入圖示: {e}")
+
+# 選擇檔案區域
 choose_file_frame = tk.Frame(root)
 choose_file_frame.pack(fill="x", pady=5)
 current_file_label = tk.Label(choose_file_frame, text=f"目前檔案: {file_path.name}", anchor="w")
 current_file_label.pack(side="left", padx=10)
-# 舊按鈕 frame 保留原本按鈕
+
+# 功能按鈕區域
 button_frame = tk.Frame(root)
 button_frame.pack(fill="x", pady=5)
 
-
-# 搜尋區
+# 搜尋與輸入區域
 frame = tk.Frame(root)
 frame.pack(fill="x", pady=5)
 
-# tk.Label(frame, text="Hostname：").pack(side="left", padx=5)
-# hostname_var = tk.StringVar()
-# hostname_entry = tk.Entry(frame, textvariable=hostname_var, width=15)
-# hostname_entry.pack(side="left", padx=5)
 tk.Label(frame, text="Hostname：").pack(side="left", padx=5)
 hostname_prefix_var = tk.StringVar()
 hostname_prefix_entry = tk.Entry(frame, textvariable=hostname_prefix_var, width=10)
@@ -67,27 +69,28 @@ mask_var = tk.StringVar()
 mask_entry = tk.Entry(frame, textvariable=mask_var, width=15)
 mask_entry.pack(side="left", padx=5)
 
-# 文字區
+# 文字顯示區
 text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("微軟正黑體", 12))
-text_area.pack(expand=True, fill='both')
+text_area.pack(expand=True, fill='both', padx=10, pady=5)
 text_area.config(state=tk.DISABLED)
 
-# ------------------ 功能 ------------------ #
+# 狀態列 (用來顯示更新進度)
+status_var = tk.StringVar(value="就緒")
+status_bar = tk.Label(root, textvariable=status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+# ------------------ 功能函式 ------------------ #
 
 def load_file():
-    """顯示完整檔案"""
     text_area.config(state=tk.NORMAL)
     text_area.delete('1.0', tk.END)
-
     try:
         with file_path.open("r", encoding="utf-8") as f:
             for line in f:
                 text_area.insert(tk.END, line)
     except FileNotFoundError:
-        messagebox.showerror("錯誤", "找不到設備1.txt")
-
+        messagebox.showerror("錯誤", "找不到設備檔案")
     text_area.config(state=tk.DISABLED)
-current_file_label.config(text=f"目前檔案: {file_path.name}")
 
 def get_hostname():
     try:
@@ -102,248 +105,76 @@ def get_hostname():
                             hostname_prefix_var.set(prefix)
                             hostname_suffix_var.set(suffix)
                         return
-        messagebox.showinfo("提示", "找不到 hostname")
-    except FileNotFoundError:
-        messagebox.showerror("錯誤", "找不到設備1.txt")
-
-# def modify_hostname():
-#     """一鍵修改 hostname"""
-#     new_hostname = hostname_var.get().strip()
-
-#     if not new_hostname:
-#         messagebox.showwarning("警告", "請輸入新的 hostname")
-#         return
-
-#     try:
-#         lines = []
-#         found = False
-
-#         with file_path.open("r", encoding="utf-8") as f:
-#             for line in f:
-#                 if line.strip().lower().startswith("hostname"):
-#                     indent = line[:len(line) - len(line.lstrip())]
-#                     lines.append(f"{indent}hostname {new_hostname}\n")
-#                     found = True
-#                 else:
-#                     lines.append(line)
-
-#         if not found:
-#             messagebox.showinfo("提示", "檔案內沒有 hostname 設定")
-#             return
-
-#         # 寫回檔案
-#         with file_path.open("w", encoding="utf-8") as f:
-#             f.writelines(lines)
-
-#         messagebox.showinfo("成功", "Hostname 修改完成！")
-#         load_file()
-
-#     except FileNotFoundError:
-#         messagebox.showerror("錯誤", "找不到設備1.txt")
-
-
-def copy_all_content():
-    """一鍵複製全部設定到剪貼簿"""
-    text_area.config(state=tk.NORMAL)
-    content = text_area.get("1.0", tk.END).strip()
-
-    if not content:
-        messagebox.showwarning("警告", "沒有內容可以複製")
-        text_area.config(state=tk.DISABLED)
-        return
-
-    root.clipboard_clear()
-    root.clipboard_append(content)
-    root.update()  # 確保剪貼簿更新
-
-    text_area.config(state=tk.DISABLED)
-    messagebox.showinfo("成功", "已複製到剪貼簿！")        
+    except Exception: pass
 
 def get_management_ip():
-    # 定義所有可能的關鍵字前綴
-    target_prefixes = [
-        "ip address default-management",
-        "ip address inband-default"
-    ]
-    
+    target_prefixes = ["ip address default-management", "ip address inband-default"]
     try:
         with file_path.open("r", encoding="utf-8") as f:
             for line in f:
                 clean_line = line.strip().lower()
-                
-                # 檢查目前這一行是否以任一關鍵字開頭
                 for prefix in target_prefixes:
                     if clean_line.startswith(prefix):
                         parts = line.strip().split()
-                        
-                        # 核心邏輯：計算前綴長度來動態抓取 IP
-                        # 例如 "ip address inband-default" 有 3 個單字，IP 就會在 parts[3]
                         prefix_len = len(prefix.split())
-                        
                         if len(parts) >= prefix_len + 2:
-                            mgmt_ip_var.set(parts[prefix_len])     # IP 位址
-                            mask_var.set(parts[prefix_len + 1])   # 遮罩
-                            return # 找到就結束函式
-                            
-            messagebox.showinfo("提示", "找不到管理 IP 或 Inband IP 設定")
-        
-    except FileNotFoundError:
-        messagebox.showerror("錯誤", "找不到設定檔案")
-
-# def modify_management_ip():
-#     new_ip = mgmt_ip_var.get().strip()
-
-#     if not new_ip:
-#         messagebox.showwarning("警告", "請輸入新的管理IP")
-#         return
-
-#     try:
-#         lines = []
-#         found = False
-
-#         with file_path.open("r", encoding="utf-8") as f:
-#             for line in f:
-#                 if line.strip().lower().startswith("ip address default-management"):
-#                     parts = line.strip().split()
-#                     if len(parts) >= 5:
-#                         mask = parts[4]  # 保留原本遮罩
-#                         indent = line[:len(line) - len(line.lstrip())]
-#                         lines.append(f"{indent}ip address default-management {new_ip} {mask}\n")
-#                         found = True
-#                     else:
-#                         lines.append(line)
-#                 else:
-#                     lines.append(line)
-
-#         if not found:
-#             messagebox.showinfo("提示", "檔案內沒有管理IP設定")
-#             return
-
-#         with file_path.open("w", encoding="utf-8") as f:
-#             f.writelines(lines)
-
-#         messagebox.showinfo("成功", "管理IP修改完成！")
-#         load_file()
-
-#     except FileNotFoundError:
-#         messagebox.showerror("錯誤", "找不到設備1.txt")       
+                            mgmt_ip_var.set(parts[prefix_len])
+                            mask_var.set(parts[prefix_len + 1])
+                            return
+    except Exception: pass
 
 def modify_all():
-    """同時修改 hostname + 管理IP"""
-
     new_ip = mgmt_ip_var.get().strip()
     new_mask = mask_var.get().strip()
     prefix = hostname_prefix_var.get().strip()
     suffix = hostname_suffix_var.get().strip()
-
-    # hostname 組合邏輯
-    if prefix or suffix:
-        new_hostname = f"{prefix}-{suffix}"
-    else:
-        new_hostname = ""
+    new_hostname = f"{prefix}-{suffix}" if (prefix or suffix) else ""
 
     if not new_hostname and not new_ip:
         messagebox.showwarning("警告", "請輸入要修改的內容")
         return
 
-    target_prefixes = [
-        "ip address default-management",
-        "ip address inband-default"
-    ]
-
+    target_prefixes = ["ip address default-management", "ip address inband-default"]
     try:
         lines = []
-        hostname_found = False
-        ip_found = False
-
         with file_path.open("r", encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 lower_line = stripped.lower()
-
-                # =====================
                 # 修改 hostname
-                # =====================
                 if lower_line.startswith("hostname") and new_hostname:
                     indent = line[:len(line) - len(line.lstrip())]
                     lines.append(f"{indent}hostname {new_hostname}\n")
-                    hostname_found = True
                     continue
-
-                # =====================
-                # 修改 管理IP（動態 prefix）
-                # =====================
-                modified = False
-
-                for prefix_text in target_prefixes:
-                    if lower_line.startswith(prefix_text) and new_ip:
-
+                # 修改 IP
+                modified_ip = False
+                for p_text in target_prefixes:
+                    if lower_line.startswith(p_text) and new_ip:
                         parts = stripped.split()
-                        prefix_len = len(prefix_text.split())
-
-                        if len(parts) > prefix_len:
-
-                            # 取得原本遮罩（若沒輸入新遮罩）
-                            old_mask = parts[prefix_len + 1] if len(parts) > prefix_len + 1 else ""
-                            mask = new_mask if new_mask else old_mask
-
-                            indent = line[:len(line) - len(line.lstrip())]
-                            lines.append(
-                                f"{indent}{prefix_text} {new_ip} {mask}\n"
-                            )
-
-                            ip_found = True
-                            modified = True
-                            break
-
-                if modified:
-                    continue
-
-                # 其他行原樣保留
-                lines.append(line)
-
-        if not hostname_found and new_hostname:
-            messagebox.showinfo("提示", "找不到 hostname 設定")
-
-        if not ip_found and new_ip:
-            messagebox.showinfo("提示", "找不到 管理IP 設定")
+                        p_len = len(p_text.split())
+                        old_mask = parts[p_len + 1] if len(parts) > p_len + 1 else ""
+                        mask = new_mask if new_mask else old_mask
+                        indent = line[:len(line) - len(line.lstrip())]
+                        lines.append(f"{indent}{p_text} {new_ip} {mask}\n")
+                        modified_ip = True
+                        break
+                if not modified_ip:
+                    lines.append(line)
 
         with file_path.open("w", encoding="utf-8") as f:
             f.writelines(lines)
-
         messagebox.showinfo("成功", "修改完成！")
         load_file()
+    except Exception as e:
+        messagebox.showerror("錯誤", f"修改失敗: {e}")
 
-    except FileNotFoundError:
-        messagebox.showerror("錯誤", "找不到設定檔")
-
-
-# def choose_file():
-#     global file_path
-#     selected = filedialog.askopenfilename(
-#         title="選擇設備 Config",
-#         filetypes=[("Config File", "*.txt"), ("All Files", "*.*")]
-#     )
-#     if selected:
-#         file_path = Path(selected)
-#         load_file()
-#         get_hostname()
-#         get_management_ip()
-#         current_file_label.config(text=f"目前檔案: {file_path.name}")
 def choose_file():
     global file_path
-    
-    # 取得程式執行時的實際目錄 (如果是 exe，就是 exe 所在的資料夾)
-    # 注意：這裡使用 Path(sys.executable).parent 是為了在打包後能回到 exe 旁邊
-    # 如果是在開發環境，則使用 Path(__file__).parent
-    current_dir = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-
     selected = filedialog.askopenfilename(
         title="選擇設備 Config",
-        initialdir=current_dir,  # <--- 設定起始目錄
+        initialdir=EXE_DIR,
         filetypes=[("Config File", "*.txt"), ("All Files", "*.*")]
     )
-    
     if selected:
         file_path = Path(selected)
         load_file()
@@ -351,140 +182,108 @@ def choose_file():
         get_management_ip()
         current_file_label.config(text=f"目前檔案: {file_path.name}")
 
+def copy_all_content():
+    content = text_area.get("1.0", tk.END).strip()
+    if content:
+        root.clipboard_clear()
+        root.clipboard_append(content)
+        root.update()
+        messagebox.showinfo("成功", "已複製到剪貼簿！")
+
+# ------------------ 更新邏輯 (改為異步按鈕觸發) ------------------ #
 
 def version_tuple(v):
     try:
-        # 只保留數字與點，過濾掉其餘字元
         clean_v = "".join(c for c in v if c.isdigit() or c == '.')
         return tuple(map(int, clean_v.split(".")))
+    except: return (0, 0, 0)
+
+def check_for_update_task():
+    """實際在背景跑的更新檢查任務"""
+    status_var.set("正在檢查更新...")
+    check_update_button.config(state=tk.DISABLED) # 防止重複點擊
+    
+    target_url = f"{VERSION_URL}?t={int(time.time())}"
+    try:
+        req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            raw_data = response.read().decode("utf-8")
+            lines = [l.strip() for l in raw_data.splitlines() if l.strip()]
+            
+        if len(lines) >= 2:
+            latest_version = lines[0]
+            download_url = lines[1]
+            
+            if version_tuple(latest_version) > version_tuple(APP_VERSION):
+                status_var.set(f"發現新版本: v{latest_version}")
+                # 切回主執行緒彈窗
+                root.after(0, lambda: prompt_update(latest_version, download_url))
+            else:
+                status_var.set("目前已是最新版本")
+                root.after(0, lambda: messagebox.showinfo("檢查更新", f"目前已是最新版本 (v{APP_VERSION})"))
+        else:
+            status_var.set("更新伺服器回傳格式錯誤")
     except Exception as e:
-        print(f"版本號解析錯誤 ({v}): {e}")
-        return (0, 0, 0)
+        status_var.set("檢查更新失敗")
+        root.after(0, lambda: messagebox.showerror("錯誤", f"無法連線至更新伺服器: {e}"))
+    finally:
+        check_update_button.config(state=tk.NORMAL)
+
+def prompt_update(ver, url):
+    if messagebox.askyesno("發現新版本", f"最新版本：{ver}\n是否立即下載並自動覆蓋？"):
+        threading.Thread(target=auto_update, args=(url,), daemon=True).start()
 
 def auto_update(download_url):
-    """執行下載與強制替換邏輯"""
     try:
+        status_var.set("正在下載更新檔...")
         is_frozen = getattr(sys, 'frozen', False)
-        # 使用 .resolve() 取得絕對路徑，避免相對路徑在 cmd 中失效
         current_exe_path = Path(sys.executable if is_frozen else __file__).resolve()
         temp_file = current_exe_path.with_suffix(current_exe_path.suffix + ".tmp")
         
-        print(f"[*] 開始下載更新檔...")
-        
-        # 下載新檔案
         req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             with open(temp_file, 'wb') as f:
                 f.write(response.read())
         
-        print("[*] 下載完成，準備啟動背景替換程序...")
-
         if is_frozen:
-            # 取得目前的檔名 (例如 readconfig.exe)
-            exe_name = current_exe_path.name
-            
-            # 強化版 CMD 指令：
-            # 1. timeout 5: 給予 5 秒緩衝時間，確保主程式已完全結束
-            # 2. del /f: 強制刪除舊檔
-            # 3. move /y: 強制將 tmp 改名並覆蓋
-            # 4. start: 重新啟動新版
+            status_var.set("下載完成，準備重啟...")
             cmd = (
-                f'timeout /t 5 /nobreak && '
+                f'timeout /t 3 /nobreak && '
                 f'del /f /q "{current_exe_path}" && '
                 f'move /y "{temp_file}" "{current_exe_path}" && '
                 f'start "" "{current_exe_path}"'
             )
-            
-            # 使用 Popen 並完全脫離父行程
             subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            
-            # 立即自殺，放開檔案鎖定
-            root.destroy()
-            sys.exit()
+            root.after(0, root.destroy)
         else:
-            messagebox.showinfo("開發模式", f"更新檔已下載：{temp_file.name}\n(開發環境不執行覆蓋)")
-
+            messagebox.showinfo("開發模式", "下載完成 (開發環境不執行覆蓋)")
     except Exception as e:
-        messagebox.showerror("更新錯誤", f"無法執行自動覆蓋：\n{e}")
+        root.after(0, lambda: messagebox.showerror("更新失敗", str(e)))
 
+def start_update_thread():
+    """按鈕點擊事件"""
+    threading.Thread(target=check_for_update_task, daemon=True).start()
 
-def check_for_update(manual=False):
-    """
-    檢查更新功能：每次執行都會顯示狀態提示。
-    """
-    # 啟動時自動清理殘留的 tmp 檔案
-    try:
-        is_frozen = getattr(sys, 'frozen', False)
-        current_exe_path = Path(sys.executable if is_frozen else __file__).resolve()
-        leftover_tmp = current_exe_path.with_suffix(current_exe_path.suffix + ".tmp")
-        if leftover_tmp.exists():
-            leftover_tmp.unlink()
-    except:
-        pass
-
-    # 加上隨機參數避免 GitHub 快取
-    target_url = f"{VERSION_URL}?t={int(time.time())}"
-    print(f"[*] 正在檢查更新... URL: {target_url}")
-    
-    try:
-        req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            raw_data = response.read().decode("utf-8")
-            lines = [line.strip() for line in raw_data.splitlines() if line.strip()]
-            
-        if len(lines) < 2:
-            print("[!] 雲端檔案格式錯誤")
-            return
-
-        latest_version = lines[0]
-        download_url = lines[1]
-        
-        # 1. 發現新版本：詢問是否更新
-        if version_tuple(latest_version) > version_tuple(APP_VERSION):
-            result = messagebox.askyesno(
-                "發現新版本",
-                f"目前版本：{APP_VERSION}\n"
-                f"最新版本：{latest_version}\n\n"
-                "是否立即下載並覆蓋更新？"
-            )
-            if result:
-                auto_update(download_url)
-        
-        # 2. 沒有新版本：強制顯示「已是最新版本」
-        else:
-            print(f"[-] 目前已是最新版本 ({APP_VERSION})")
-            # 移除原本的 if manual 判定，改為直接彈窗
-            messagebox.showinfo(
-                "檢查更新", 
-                f"檢查完成！\n雲端版本：v{latest_version}\n目前版本：v{APP_VERSION}\n\n您目前使用的是最新版本。"
-            )
-
-    except Exception as e:
-        print(f"[!] 檢查更新失敗: {e}")
-        # 如果失敗了，也彈窗告知使用者
-        messagebox.showerror("檢查更新失敗", f"無法連線至更新伺服器，請檢查網路連線。\n錯誤訊息：{e}")
-
-# ------------------ 按鈕 ------------------ #
-choose_file_button = tk.Button(
-    choose_file_frame,
-    text="選擇檔案",
-    command=choose_file,
-    bg="#2196F3",   # 藍色背景
-    fg="white",
-    font=("微軟正黑體", 11, "bold")
-)
+# ------------------ 按鈕配置 ------------------ #
+choose_file_button = tk.Button(choose_file_frame, text="選擇檔案", command=choose_file, bg="#2196F3", fg="white", font=("微軟正黑體", 10, "bold"))
 choose_file_button.pack(side="left", padx=5)
 
 tk.Button(button_frame, text="讀檔(save)", width=12, command=load_file).pack(side="left", padx=5)
-# tk.Button(button_frame, text="讀取Hostname", width=12, command=get_hostname).pack(side="left", padx=5)
-#tk.Button(button_frame, text="修改Hostname", width=12, command=modify_hostname).pack(side="left", padx=5)
-# tk.Button(button_frame, text="讀取管理IP", width=12, command=get_management_ip).pack(side="left", padx=5)
-#tk.Button(button_frame, text="修改管理IP", width=12, command=modify_management_ip).pack(side="left", padx=5)
-tk.Button(button_frame, text="修改", width=12, command=modify_all).pack(side="left", padx=5)
+tk.Button(button_frame, text="執行修改", width=12, command=modify_all, bg="#4CAF50", fg="white").pack(side="left", padx=5)
 tk.Button(button_frame, text="一鍵複製", width=12, command=copy_all_content).pack(side="left", padx=5)
-#k.Button(button_frame, text="選擇檔案", width=12, command=choose_file).pack(side="left", padx=5)
 
+# 放到最右邊或獨立出來的檢查更新按鈕
+check_update_button = tk.Button(button_frame, text="檢查更新", width=12, command=start_update_thread)
+check_update_button.pack(side="right", padx=10)
 
-# 啟動
-root.after(1000, check_for_update)
+# 啟動時清理舊 tmp
+def cleanup_tmp():
+    try:
+        is_frozen = getattr(sys, 'frozen', False)
+        curr = Path(sys.executable if is_frozen else __file__).resolve()
+        tmp = curr.with_suffix(curr.suffix + ".tmp")
+        if tmp.exists(): tmp.unlink()
+    except: pass
+
+cleanup_tmp()
 root.mainloop()
