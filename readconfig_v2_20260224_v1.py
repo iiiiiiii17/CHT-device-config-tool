@@ -13,7 +13,7 @@ import shutil
 import time
 
 APP_NAME = "設備設定工具"
-APP_VERSION = "0.9.9"
+APP_VERSION = "1.0.0"
 VERSION_URL = "https://raw.githubusercontent.com/iiiiiiii17/CHT-device-config-tool/refs/heads/main/version.txt"
 
 # 判斷程式是否被打包成 exe
@@ -361,48 +361,108 @@ def version_tuple(v):
         print(f"版本號解析錯誤 ({v}): {e}")
         return (0, 0, 0)
 
-def check_for_update():
+def auto_update(download_url):
+    """執行下載與強制替換邏輯"""
+    try:
+        is_frozen = getattr(sys, 'frozen', False)
+        # 使用 .resolve() 取得絕對路徑，避免相對路徑在 cmd 中失效
+        current_exe_path = Path(sys.executable if is_frozen else __file__).resolve()
+        temp_file = current_exe_path.with_suffix(current_exe_path.suffix + ".tmp")
+        
+        print(f"[*] 開始下載更新檔...")
+        
+        # 下載新檔案
+        req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            with open(temp_file, 'wb') as f:
+                f.write(response.read())
+        
+        print("[*] 下載完成，準備啟動背景替換程序...")
+
+        if is_frozen:
+            # 取得目前的檔名 (例如 readconfig.exe)
+            exe_name = current_exe_path.name
+            
+            # 強化版 CMD 指令：
+            # 1. timeout 5: 給予 5 秒緩衝時間，確保主程式已完全結束
+            # 2. del /f: 強制刪除舊檔
+            # 3. move /y: 強制將 tmp 改名並覆蓋
+            # 4. start: 重新啟動新版
+            cmd = (
+                f'timeout /t 5 /nobreak && '
+                f'del /f /q "{current_exe_path}" && '
+                f'move /y "{temp_file}" "{current_exe_path}" && '
+                f'start "" "{current_exe_path}"'
+            )
+            
+            # 使用 Popen 並完全脫離父行程
+            subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            # 立即自殺，放開檔案鎖定
+            root.destroy()
+            sys.exit()
+        else:
+            messagebox.showinfo("開發模式", f"更新檔已下載：{temp_file.name}\n(開發環境不執行覆蓋)")
+
+    except Exception as e:
+        messagebox.showerror("更新錯誤", f"無法執行自動覆蓋：\n{e}")
+
+
+def check_for_update(manual=False):
+    """
+    檢查更新功能：每次執行都會顯示狀態提示。
+    """
+    # 啟動時自動清理殘留的 tmp 檔案
+    try:
+        is_frozen = getattr(sys, 'frozen', False)
+        current_exe_path = Path(sys.executable if is_frozen else __file__).resolve()
+        leftover_tmp = current_exe_path.with_suffix(current_exe_path.suffix + ".tmp")
+        if leftover_tmp.exists():
+            leftover_tmp.unlink()
+    except:
+        pass
+
     # 加上隨機參數避免 GitHub 快取
     target_url = f"{VERSION_URL}?t={int(time.time())}"
     print(f"[*] 正在檢查更新... URL: {target_url}")
     
     try:
-        with urllib.request.urlopen(target_url, timeout=5) as response:
-            # 讀取並解碼
+        req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
             raw_data = response.read().decode("utf-8")
-            # 關鍵修正：使用 splitlines 並過濾掉純空白的行
             lines = [line.strip() for line in raw_data.splitlines() if line.strip()]
             
-        print(f"[*] 抓取到的行數: {len(lines)}")
-        for i, content in enumerate(lines):
-            print(f"    行 {i}: {content}")
-
         if len(lines) < 2:
-            print("[!] 錯誤：雲端檔案格式不正確，行數不足 2 行。")
+            print("[!] 雲端檔案格式錯誤")
             return
 
         latest_version = lines[0]
         download_url = lines[1]
         
-        print(f"[*] 雲端最新版本: {latest_version}")
-        print(f"[*] 程式目前版本: {APP_VERSION}")
-
-        # 比較版本 (確保使用你定義的 version_tuple)
+        # 1. 發現新版本：詢問是否更新
         if version_tuple(latest_version) > version_tuple(APP_VERSION):
-            print("[+] 偵測到新版本！")
             result = messagebox.askyesno(
                 "發現新版本",
                 f"目前版本：{APP_VERSION}\n"
                 f"最新版本：{latest_version}\n\n"
-                "是否立即下載更新並自動重啟？"
+                "是否立即下載並覆蓋更新？"
             )
             if result:
                 auto_update(download_url)
+        
+        # 2. 沒有新版本：強制顯示「已是最新版本」
         else:
-            print("[-] 目前已是最新版本。")
+            print(f"[-] 目前已是最新版本 ({APP_VERSION})")
+            # 移除原本的 if manual 判定，改為直接彈窗
+            messagebox.showinfo(
+                "檢查更新", 
+                f"檢查完成！\n雲端版本：v{latest_version}\n目前版本：v{APP_VERSION}\n\n您目前使用的是最新版本。"
+            )
 
     except Exception as e:
         print(f"[!] 檢查更新失敗: {e}")
+        # 如果失敗了，也彈窗告知使用者
+        messagebox.showerror("檢查更新失敗", f"無法連線至更新伺服器，請檢查網路連線。\n錯誤訊息：{e}")
 
 # ------------------ 按鈕 ------------------ #
 choose_file_button = tk.Button(
